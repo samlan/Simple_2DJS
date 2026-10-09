@@ -156,6 +156,38 @@
     return this._add(extend({ type: 'points', points: pts, mode: 'line', radius: 3.5 }, options));
   };
 
+  /**
+   * Plot a bar chart. `data` is [y,...] (x = index), [[x,y],...] or [{x,y},...].
+   * options: { categories: ['A','B',...], barWidth (data units, default 0.8),
+   *            base (value bars grow from, default 0), color, label }
+   * `categories` replaces the numeric x tick labels with names at x = 0,1,2,...
+   */
+  Graph.prototype.plotBars = function (data, options) {
+    var pts = data.map(function (d, i) {
+      if (typeof d === 'number') return { x: i, y: d };
+      return Array.isArray(d) ? { x: d[0], y: d[1] } : d;
+    });
+    return this._add(extend({ type: 'bars', points: pts, barWidth: 0.8, base: 0 }, options));
+  };
+
+  /** Set the visible range to fit all points/bars (plus a fractional margin, default 0.08). */
+  Graph.prototype.fit = function (margin) {
+    var m = margin == null ? 0.08 : margin;
+    var xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+    this.series.forEach(function (s) {
+      if (!s.points) return;
+      var half = s.type === 'bars' ? s.barWidth / 2 : 0;
+      if (s.type === 'bars') { yMin = Math.min(yMin, s.base); yMax = Math.max(yMax, s.base); }
+      s.points.forEach(function (p) {
+        xMin = Math.min(xMin, p.x - half); xMax = Math.max(xMax, p.x + half);
+        yMin = Math.min(yMin, p.y); yMax = Math.max(yMax, p.y);
+      });
+    });
+    if (xMin === Infinity) return this;
+    var dx = (xMax - xMin) || 1, dy = (yMax - yMin) || 1;
+    return this.setRange({ xMin: xMin - dx * m, xMax: xMax + dx * m, yMin: yMin - dy * m, yMax: yMax + dy * m });
+  };
+
   /** Remove all plotted series (keeps axes/view). */
   Graph.prototype.clear = function () {
     this.series = [];
@@ -239,7 +271,9 @@
 
     // Axes cross at the origin when visible, otherwise stick to the nearest edge.
     var axisY = Math.min(Math.max(origin.y, a.y), a.y + a.h);
-    var axisX = Math.min(Math.max(origin.x, a.x), a.x + a.w);
+    var cats = this._categories();
+    // Category charts keep the y axis on the left edge instead of cutting through the first bar.
+    var axisX = cats ? a.x : Math.min(Math.max(origin.x, a.x), a.x + a.w);
 
     ctx.strokeStyle = o.axisColor;
     ctx.fillStyle = o.textColor;
@@ -256,11 +290,20 @@
     var labelY = Math.min(axisY + 6, a.y + a.h + 6);
     var xAxisAtBottom = axisY >= a.y + a.h - 1;
 
-    for (v = Math.ceil(o.xMin / xStep) * xStep; v <= o.xMax; v += xStep) {
-      if (Math.abs(v) < xStep * 1e-9) continue; // origin handled below
-      p = this.toPixel(v, 0).x;
-      if (o.ticks) { ctx.beginPath(); ctx.moveTo(p, axisY - 4); ctx.lineTo(p, axisY + 4); ctx.stroke(); }
-      if (o.labels) ctx.fillText(formatTick(v, xStep), p, xAxisAtBottom ? a.y + a.h + 6 : labelY);
+    if (cats) {
+      for (var ci = 0; ci < cats.length; ci++) {
+        if (ci < o.xMin || ci > o.xMax) continue;
+        p = this.toPixel(ci, 0).x;
+        if (o.ticks) { ctx.beginPath(); ctx.moveTo(p, axisY - 4); ctx.lineTo(p, axisY + 4); ctx.stroke(); }
+        if (o.labels) ctx.fillText(String(cats[ci]), p, xAxisAtBottom ? a.y + a.h + 6 : labelY);
+      }
+    } else {
+      for (v = Math.ceil(o.xMin / xStep) * xStep; v <= o.xMax; v += xStep) {
+        if (Math.abs(v) < xStep * 1e-9) continue; // origin handled below
+        p = this.toPixel(v, 0).x;
+        if (o.ticks) { ctx.beginPath(); ctx.moveTo(p, axisY - 4); ctx.lineTo(p, axisY + 4); ctx.stroke(); }
+        if (o.labels) ctx.fillText(formatTick(v, xStep), p, xAxisAtBottom ? a.y + a.h + 6 : labelY);
+      }
     }
 
     ctx.textAlign = 'right';
@@ -273,8 +316,8 @@
       if (o.labels) ctx.fillText(formatTick(v, yStep), yAxisAtLeft ? a.x - 6 : axisX - 6, p);
     }
 
-    // Origin label, only when it's on screen.
-    if (o.labels && origin.x >= a.x && origin.x <= a.x + a.w && origin.y >= a.y && origin.y <= a.y + a.h) {
+    // Origin label, only when it's on screen (category axes label x = 0 themselves).
+    if (o.labels && !cats && origin.x >= a.x && origin.x <= a.x + a.w && origin.y >= a.y && origin.y <= a.y + a.h) {
       ctx.textAlign = 'right';
       ctx.textBaseline = 'top';
       ctx.fillText('0', origin.x - 5, origin.y + 5);
@@ -330,7 +373,12 @@
       ctx.strokeStyle = s.color;
       ctx.lineWidth = s.width;
       ctx.setLineDash(s.dash || []);
-      ctx.beginPath(); ctx.moveTo(x + 8, cy); ctx.lineTo(x + 26, cy); ctx.stroke();
+      if (s.type === 'bars') {
+        ctx.fillStyle = s.color;
+        ctx.fillRect(x + 10, cy - 5, 14, 10);
+      } else {
+        ctx.beginPath(); ctx.moveTo(x + 8, cy); ctx.lineTo(x + 26, cy); ctx.stroke();
+      }
       ctx.setLineDash([]);
       ctx.fillStyle = o.textColor;
       ctx.fillText(s.label, x + 32, cy);
@@ -348,8 +396,27 @@
     if (s.type === 'function') this._drawFunction(s);
     else if (s.type === 'parametric') this._drawParametric(s);
     else if (s.type === 'points') this._drawPoints(s);
+    else if (s.type === 'bars') this._drawBars(s);
 
     ctx.setLineDash([]);
+  };
+
+  Graph.prototype._drawBars = function (s) {
+    var ctx = this.ctx;
+    for (var i = 0; i < s.points.length; i++) {
+      var p = s.points[i];
+      var a = this.toPixel(p.x - s.barWidth / 2, p.y);
+      var b = this.toPixel(p.x + s.barWidth / 2, s.base);
+      ctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+    }
+  };
+
+  // Category names from the first bar series that defines them (or null).
+  Graph.prototype._categories = function () {
+    for (var i = 0; i < this.series.length; i++) {
+      if (this.series[i].categories) return this.series[i].categories;
+    }
+    return null;
   };
 
   // Stroke a polyline, lifting the pen at invalid values and huge jumps (asymptotes).
@@ -451,6 +518,7 @@
 
   return {
     Graph: Graph,
-    create: function (target, options) { return new Graph(target, options); }
+    create: function (target, options) { return new Graph(target, options); },
+    _internals: { niceStep: niceStep, formatTick: formatTick }
   };
 });

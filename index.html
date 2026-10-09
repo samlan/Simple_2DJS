@@ -19,6 +19,7 @@
     <canvas id="functions"></canvas>
     <canvas id="parametric"></canvas>
     <canvas id="scatter"></canvas>
+    <canvas id="bars"></canvas>
   </div>
 
   <script src="src/simple2d.js"></script>
@@ -48,6 +49,13 @@
                                     title: 'Data points', xLabel: 'time', yLabel: 'value' })
         .plotPoints(pts, { mode: 'both', label: 'measurements' })
         .plotFunction(function (x) { return 0.5 * x + 2; }, { label: 'trend', color: '#dc2626' })
+    );
+
+    graphs.push(
+      Simple2D.create('#bars', { title: 'Bar chart', yLabel: 'tonnes' })
+        .plotBars([12, 19, 7, 15, 9], { categories: ['Apples', 'Pears', 'Plums', 'Figs', 'Kiwis'], label: '2025 harvest' })
+        .fit(0.1)
+        .setRange({ yMin: 0 })
     );
 
     window.addEventListener('resize', function () { graphs.forEach(function (g) { g.resize(); }); });

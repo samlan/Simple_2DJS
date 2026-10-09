@@ -12,7 +12,7 @@ A tiny, dependency-free vanilla-JS library for plotting 2D graphs on the Cartesi
 </script>
 ```
 
-Open `index.html` for a live demo. Drag to pan, scroll to zoom, double-click to reset.
+Open `index.html` for a live demo. For a bundled/minified copy, use `dist/simple2d.min.js` (see [Development](#development)). Drag to pan, scroll to zoom, double-click to reset.
 
 ## API
 
@@ -36,6 +36,22 @@ Size the canvas with CSS (`width`/`height`); the library handles HiDPI scaling. 
 - `plotFunction(fn, {color, width, label, dash, samples})`: `y = fn(x)`; re-sampled on pan/zoom; gaps at `NaN`/asymptotes.
 - `plotParametric(xf, yf, {tMin, tMax, samples, ...})`: `(x(t), y(t))`.
 - `plotPoints([[x,y],…] | [{x,y},…], {mode: 'line'|'scatter'|'both', radius, ...})`.
+- `plotBars(data, {categories, barWidth, base, color, label})`: bar chart. `data` is `[y,…]` (x = index), `[[x,y],…]` or `[{x,y},…]`. `categories: ['A','B',…]` replaces the numeric x labels with names. `barWidth` is in data units (default `0.8`); bars grow from `base` (default `0`), so negative values hang below.
+- `fit(margin = 0.08)`: set the visible range to fit all points/bars; handy after `plotBars`.
 - `clear()`: remove all series.
 - `setRange({xMin,xMax,yMin,yMax})`, `resetView()`, `render()`, `resize()`.
 - `toPixel(x, y)` / `toData(px, py)`: coordinate conversion.
+
+## Development
+
+```
+npm install      # esbuild (dev only)
+npm test         # node:test, no browser needed (canvas is mocked)
+npm run build    # -> dist/simple2d.js and dist/simple2d.min.js
+```
+
+```js
+Simple2D.create('#g', { title: 'Harvest' })
+  .plotBars([12, 19, 7], { categories: ['Apples', 'Pears', 'Plums'], label: '2025' })
+  .fit().setRange({ yMin: 0 });
+```
